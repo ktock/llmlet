@@ -16,6 +16,7 @@
 
 extern "C" {
   int get_next_prompt(char*, int);
+  int get_system_prompt(char*, int);
 }
 
 #include <emscripten.h>
@@ -300,6 +301,14 @@ int main(int argc, char ** argv) {
 
     std::vector<llama_chat_message> messages;
     std::vector<char> formatted(llama_n_ctx(ctx));
+
+    char *system = (char *)malloc(n_ctx);
+    size_t len = get_system_prompt(system, n_ctx);
+    if (len > 0) {
+      messages.push_back({"system", strdup(system)});
+      fprintf(stderr, "%s\n", system);
+    }
+    
     int prev_len = 0;
     char *user = (char *)malloc(n_ctx);
     while (true) {

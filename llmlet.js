@@ -857,6 +857,14 @@ function startClient(peer, module, options) {
         }
     };
 
+    Module.pending_system_prompt = (cb) => {
+        if (options.getSystemPrompt != null) {
+            cb(options.getSystemPrompt());
+            return;
+        }
+        cb("");
+    };
+
     Module['preRun'] = [
         () => {
             Module.ENV.NO_COLOR = "1";

@@ -181,6 +181,35 @@ mergeInto(LibraryManager.library, {
         return res;
     },
 
+    $get_system_prompt_inner__proxy: 'sync',
+    $get_system_prompt_inner__sig: 'vpip',
+    $get_system_prompt_inner: function(ptr, len, waitPtr) {
+        Atomics.store(HEAP32, waitPtr >> 2, -1);
+        Module.pending_system_prompt((p) => {
+            var res = 0;
+            if ((p != null) && (p.length != 0)) {
+                res = (p.length < len) ? p.length : len;
+                HEAPU8.set(p.slice(0, res).split('').map(c => c.charCodeAt(0)), ptr);
+                HEAPU8.set([0], ptr + res);
+            }
+            Atomics.store(HEAP32, waitPtr >> 2, res);
+            Atomics.notify(HEAP32, waitPtr >> 2);
+        });
+        return;
+    },
+
+    get_system_prompt__deps: ['$get_system_prompt_inner','malloc','free'],
+    get_system_prompt__proxy: 'none',
+    get_system_prompt__sig: 'ipi',
+    get_system_prompt: function(ptr, len) {
+        var waitPtr = _malloc(8);
+        get_system_prompt_inner(ptr, len, waitPtr);
+        Atomics.wait(HEAP32, waitPtr >> 2, -1);
+        var res = Atomics.load(HEAP32, waitPtr >> 2);
+        _free(waitPtr);
+        return res;
+    },
+
     $cache_get_inner__proxy: 'sync',
     $cache_get_inner__sig: 'vpipiip',
     $cache_get_inner: function(keyptr, keylen, ptr, ofs, len, waitPtr) {
