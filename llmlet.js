@@ -799,7 +799,13 @@ function startServer(peer, module, options) {
 
 function startClient(peer, module, options) {
     var Module = {};
-    Module['print'] = (l) => options.output(l + '\n');
+
+    var outputBuf = "";
+    
+    Module['print'] = (l) => {
+        outputBuf += l;
+        options.output(l + '\n');
+    }
     Module['printErr'] = (l) => options.outputErr(l + '\n');
 
     Module.PeerManager = newPeerManager(Module, peer);
@@ -841,6 +847,17 @@ function startClient(peer, module, options) {
     var inputBuf = "";
     var pending_prompt_reader = [];
     Module.pending_prompt = (cb) => {
+        if (options.callTools != null) {
+            var callres = options.callTools(outputBuf);
+            outputBuf = "";
+            if (callres != "") {
+                options.output("(function call result) " + callres + "\n");
+                cb(callres);
+                options.output("(output) ");
+                return;
+            }
+        }
+        outputBuf = "";
         options.output("(you) ");
         if (inputBuf != "") {
             const res = inputBuf;
