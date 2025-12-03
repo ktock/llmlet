@@ -84,13 +84,13 @@ Store the assets compiled in the previous steps to `/tmp/test/htdocs/`.
 Then copy the following files from this repo to the same document root.
 
 - `llmlet.js`: A JS file to configure and start a peer in the browser.
-- `example/`: Contains an example index.html file for local testing.
+- `examples/simple/`: Contains an example index.html file for local testing.
 
 ```
-cp llmlet.js example/* /tmp/test/htdocs/
+cp llmlet.js examples/simple/* /tmp/test/htdocs/
 ```
 
-`example/index.html` is intended for local testing and requires a localhost PeerJS signaling server.
+`examples/simple/index.html` is intended for local testing and requires a localhost PeerJS signaling server.
 
 ```
 docker run --rm -d --name peerjs -p 127.0.0.1:9000:9000 peerjs/peerjs-server
