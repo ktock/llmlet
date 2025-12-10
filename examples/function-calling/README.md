@@ -23,6 +23,8 @@ Specify a model that support function calling.
 
 ### 3. Enter a prompt
 
+![Demo page](./../../images/demo-function.png)
+
 This example provides the following functions to the model.
 
 - `get_date_tool`: Returns the current time in the ISO 8601 format.
