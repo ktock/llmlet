@@ -161,8 +161,8 @@ mergeInto(LibraryManager.library, {
             if ((p != null) && (p.length != 0)) {
                 res = (p.length < len) ? p.length : len;
                 HEAPU8.set(p.slice(0, res).split('').map(c => c.charCodeAt(0)), ptr);
-                HEAPU8.set([0], ptr + res);
             }
+            HEAPU8.set([0], ptr + res);
             Atomics.store(HEAP32, waitPtr >> 2, res);
             Atomics.notify(HEAP32, waitPtr >> 2);
         });
@@ -190,8 +190,8 @@ mergeInto(LibraryManager.library, {
             if ((p != null) && (p.length != 0)) {
                 res = (p.length < len) ? p.length : len;
                 HEAPU8.set(p.slice(0, res).split('').map(c => c.charCodeAt(0)), ptr);
-                HEAPU8.set([0], ptr + res);
             }
+            HEAPU8.set([0], ptr + res);
             Atomics.store(HEAP32, waitPtr >> 2, res);
             Atomics.notify(HEAP32, waitPtr >> 2);
         });

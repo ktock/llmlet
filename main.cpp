@@ -6,6 +6,8 @@
 #include "common.h"
 #include "log.h"
 #include "llama.h"
+#include "json-schema-to-grammar.h"
+#include "sampling.h"
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -13,6 +15,10 @@
 #include <unistd.h>
 #include <thread>
 #include <iostream>
+#include <fstream>
+
+#include <nlohmann/json.hpp>
+using json = nlohmann::ordered_json;
 
 extern "C" {
   int get_next_prompt(char*, int);
@@ -82,6 +88,8 @@ int main(int argc, char ** argv) {
     
     bool rpcbackend = false;
 
+    std::string schemafile;
+
     // parse command line arguments
 
     {
@@ -120,6 +128,12 @@ int main(int argc, char ** argv) {
             } else if (strcmp(argv[i], "-rpc") == 0) {
                 if (i + 1 < argc) {
                     rpc_servers.push_back(argv[++i]);
+                } else {
+                    return 1;
+                }
+            } else if (strcmp(argv[i], "-j") == 0) {
+                if (i + 1 < argc) {
+                    schemafile = argv[++i];
                 } else {
                     return 1;
                 }
@@ -237,11 +251,13 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    // initialize the sampler
-    llama_sampler * smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
-    llama_sampler_chain_add(smpl, llama_sampler_init_min_p(0.05f, 1));
-    llama_sampler_chain_add(smpl, llama_sampler_init_temp(0.8f));
-    llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+    struct common_params_sampling smpl_params;
+    const bool enable_schema = !schemafile.empty();
+    if (enable_schema) {
+      std::ifstream sf(schemafile);
+      smpl_params.grammar = json_schema_to_grammar(json::parse(sf));
+      fprintf(stderr, "%s\n", smpl_params.grammar.c_str());
+    }
 
     // helper function to evaluate a prompt and generate a response
     auto generate = [&](const std::string & prompt) {
@@ -255,6 +271,8 @@ int main(int argc, char ** argv) {
         if (llama_tokenize(vocab, prompt.c_str(), prompt.size(), prompt_tokens.data(), prompt_tokens.size(), is_first, true) < 0) {
             GGML_ABORT("failed to tokenize the prompt\n");
         }
+
+        common_sampler * smpl = common_sampler_init(model, smpl_params);
 
         // prepare a batch for the prompt
         llama_batch batch = llama_batch_get_one(prompt_tokens.data(), prompt_tokens.size());
@@ -274,7 +292,11 @@ int main(int argc, char ** argv) {
             }
 
             // sample the next token
-            new_token_id = llama_sampler_sample(smpl, ctx, -1);
+            new_token_id = common_sampler_sample(smpl, ctx, -1);
+
+            if (enable_schema) {
+                common_sampler_accept(smpl, new_token_id, /* accept_grammar= */ true);
+            }
 
             // is it an end of generation?
             if (llama_vocab_is_eog(vocab, new_token_id)) {
@@ -296,6 +318,8 @@ int main(int argc, char ** argv) {
             batch = llama_batch_get_one(&new_token_id, 1);
         }
 
+        common_sampler_free(smpl);
+
         return response;
     };
 
@@ -312,7 +336,7 @@ int main(int argc, char ** argv) {
     int prev_len = 0;
     char *user = (char *)malloc(n_ctx);
     while (true) {
-        size_t len = wait_next_prompt(user, n_ctx);
+        size_t len = get_next_prompt(user, n_ctx);
 
         if (len == 0) {
             break;
@@ -352,7 +376,6 @@ int main(int argc, char ** argv) {
     for (auto & msg : messages) {
         free(const_cast<char *>(msg.content));
     }
-    llama_sampler_free(smpl);
     llama_free(ctx);
     llama_model_free(model);
 

@@ -45,38 +45,73 @@ var display_tool = {
 
 var function_tools = [display_tool, get_date_tool];
 
+const functionSchema = `{
+  "type": "object",
+  "properties": {
+    "thinking": {
+      "type": "string"
+    },
+    "response": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["call", "message"]
+        },
+        "data": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "arguments": { "type": "object" }
+              },
+              "required": ["name", "arguments"],
+              "additionalProperties": false
+            },
+            {
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": ["type", "data"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["thinking", "response"],
+  "additionalProperties": false
+}`;
+
 // An example system promt to enable function calling from the model.
 function createToolsSystemPrompt() {
     var prompt = `
-You may call functions using this JSON schema:
+You may call functions following the user's prompt.
 
-{
-  "type": "object",
-  "properties": {
-    "function_call": {
-      "type": "object",
-      "properties": {
-        "name": { "type": "string" },
-        "arguments": { "type": "object" }
-      },
-      "required": ["name", "arguments"]
-    }
-  }
-}
+You MUST respond ONLY using the JSON format defined as the following JSON schema.
+`;
 
-Available functions:
+    prompt += functionSchema;
 
-[`;
+    prompt += `
+You MAY use the "thinking" field for your own thinking and the "response" field for the response to the user.
+
+When you tell a message to the user using natural language using the "response" field, you MUST specify "message" in the "type" field and contain your reply in the "data" field.
+
+When you call a function using the "response" field, you MUST specify "call" in the "type" field, the function name in the "data.name" field and the arguments in the "data.arguments" field.
+You MUST NOT wrap or embed one function call inside the arguments of another.
+After you call a function, the result from the function will be provided as the next input.
+`
+    
+    prompt += `
+Available functions: [`;
 
     for (const k in function_tools) {
         prompt += JSON.stringify(function_tools[k].description);
         prompt += ',';
     }
     
-    prompt += `]
-
-You can reply using natural language to the user. However, when calling a function, respond ONLY using the JSON format. Then the JSON-formatted result value from the called function will be provided as the next input. Only one function can be called at once.
-`
+    prompt += `]`
     return prompt;
 }
 
@@ -91,19 +126,18 @@ function callTools(data) {
     }
     var res;
     var ok;
-    if ((output.function_call != null) && (output.function_call.name != "")) {
-        var targetname = output.function_call.name;
+    if ((output.response.type == "call") && (output.response.data.name != "")) {
+        var targetname = output.response.data.name;
         for (const k in function_tools) {
             if (function_tools[k].description.name == targetname) {
-                res = function_tools[k].func(output.function_call.arguments);
+                res = function_tools[k].func(output.response.data.arguments);
                 ok = true;
             }
         }
     }
     if (ok) {
         return JSON.stringify({
-            name: output.function_call.name,
-            content: res,
+            result: res,
         });
     }
     return "";

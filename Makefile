@@ -8,7 +8,7 @@ EMCC_COMMON_CFLAGS=-g -O3 -pthread -sMEMORY64=2 -mno-simd128
 llmlet-mod.js: $(LLAMA_CPP_LIBS)
 	em++ $(EMCC_COMMON_CFLAGS) -sPROXY_TO_PTHREAD -sASYNCIFY=1 -sFORCE_FILESYSTEM=1 -sEXPORT_ES6=1 -sEXPORTED_FUNCTIONS=_main,_emscripten_force_exit -sEXIT_RUNTIME=1 -sEXPORTED_RUNTIME_METHODS=FS,PThread,ENV,release_conn -sNO_DISABLE_EXCEPTION_CATCHING -sABORTING_MALLOC=0 -sALLOW_MEMORY_GROWTH=1 \
 	-o $(BUILD_DIR)/llmlet-mod.js \
-	-I ./llama.cpp/ggml/include/ -I./llama.cpp/include/ -I./llama.cpp/common/ \
+	-I ./llama.cpp/ggml/include/ -I./llama.cpp/include/ -I./llama.cpp/common/ -I./llama.cpp/vendor/ \
 	-L$(BUILD_DIR)/src/ -lllama \
 	-L$(BUILD_DIR)/common/ -lcommon \
 	-L$(BUILD_DIR)/ggml/src/ -lggml -lggml-base -lggml-cpu \

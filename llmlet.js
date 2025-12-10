@@ -888,6 +888,14 @@ function startClient(peer, module, options) {
         },
     ];
 
+    if (options.jsonSchema) {
+        const schemafile = '/schema.json';
+        Module['preRun'].push((mod) => {
+            mod.FS.writeFile(schemafile, options.jsonSchema);
+        });
+        Module['arguments'].push('-j', schemafile);
+    }
+
     runClient(
         peer,
         module,
