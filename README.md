@@ -151,6 +151,10 @@ This project addresses this limitation by directly linking multiple browsers and
 - **LLM prints corrupted string**
     - Try reloading and restarting the page. Stale data might be cached in the IndexedDB named `ChunkCache` so remove them ([a guide to delete IndexedDB data on chrome](https://developer.chrome.com/docs/devtools/storage/indexeddb?hl=en#deletedatabase)).
 
+## Additional Resources
+
+- [`./examples/`](./examples): Examples (simple, functino calling, etc.)
+
 ## Similar projects
 
 - Frameworks such as [llama.cpp](https://github.com/ggml-org/llama.cpp) and [vLLM](https://github.com/vllm-project/vllm) support distributed inference over multiple machines but they don't work across browsers.
