@@ -4,7 +4,11 @@
 // https://platform.openai.com/docs/guides/function-calling#defining-functions
 
 var get_date_tool = {
-    func: () => (new Date).toISOString(),
+    func: (resCB, arg, opts) => {
+        var d = (new Date).toISOString();
+        opts.output("(get_date) Date: " + d + "\n");
+        resCB(d);
+    },
     description: {
         type: "function",
         name: "get_date",
@@ -20,9 +24,10 @@ var get_date_tool = {
 };
 
 var display_tool = {
-    func: (arg) => {
+    func: (resCB, arg, opts) => {
+        opts.output("(display) Writing output\n");
         document.getElementById("display-from-model").innerHTML = arg.target_string;
-        return true;
+        resCB("true");
     },
     description: {
         type: "function",
@@ -96,7 +101,7 @@ You MUST respond ONLY using the JSON format defined as the following JSON schema
     prompt += `
 You MAY use the "thinking" field for your own thinking and the "response" field for the response to the user.
 
-When you tell a message to the user using natural language using the "response" field, you MUST specify "message" in the "type" field and contain your reply in the "data" field.
+When you tell a message to the user using natural language using the "response" field, you MUST specify "message" in the "type" field and contain your reply as a string in the "data" field.
 
 When you call a function using the "response" field, you MUST specify "call" in the "type" field, the function name in the "data.name" field and the arguments in the "data.arguments" field.
 You MUST NOT wrap or embed one function call inside the arguments of another.
@@ -115,30 +120,27 @@ Available functions: [`;
     return prompt;
 }
 
-// A function to hook output data from the model and invoke the specified function.
-function callTools(data) {
-    var output;
-    try {
-        output = JSON.parse(data.replace(/<think>[\s\S]*?<\/think>/g, ""));
-    } catch (e) {
-        console.log("this is not a JSON output " + e);
-        return "";
-    }
-    var res;
-    var ok;
-    if ((output.response.type == "call") && (output.response.data.name != "")) {
-        var targetname = output.response.data.name;
-        for (const k in function_tools) {
-            if (function_tools[k].description.name == targetname) {
-                res = function_tools[k].func(output.response.data.arguments);
-                ok = true;
-            }
+var callTools = {
+    handle: (data, resCB, opts) => {
+        var output;
+        try {
+            output = JSON.parse(data.replace(/<think>[\s\S]*?<\/think>/g, ""));
+        } catch (e) {
+            console.log("this is not a JSON output " + e);
+            return "";
         }
+        var ok = false;
+        if ((output.response.type == "call") && (output.response.data.name != "")) {
+            var targetname = output.response.data.name;
+            for (const k in function_tools) {
+                if (function_tools[k].description.name == targetname) {
+                    function_tools[k].func(resCB, output.response.data.arguments, opts);
+                    ok = true;
+                }
+            }
+        } else if ((output.response.type == "message") && (output.response.data != "")) {
+            opts.output(output.response.data + "\n");
+        }
+        return ok;
     }
-    if (ok) {
-        return JSON.stringify({
-            result: res,
-        });
-    }
-    return "";
 }

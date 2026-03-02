@@ -1,7 +1,9 @@
 # LLMlet: P2P distributed LLM inference on browsers
 
-LLMlet enables distributed LLM inference on browsers using [Wasm-compiled llama.cpp](https://github.com/ggml-org/llama.cpp/blob/10e9780154365b191fb43ca4830659ef12def80f/docs/build.md#webgpu-in-progress) connected via WebRTC using [PeerJS](https://peerjs.com/).
-It allows models that can't fit in a single browser tab to be split and executed across multiple browsers.
+LLMlet is an on-browser LLM runner based on [Wasm-compiled llama.cpp](https://github.com/ggml-org/llama.cpp/blob/10e9780154365b191fb43ca4830659ef12def80f/docs/build.md#webgpu-in-progress).
+
+- Distributed LLM inference among browsers connected via WebRTC using [PeerJS](https://peerjs.com/).
+- Calling functions written in JavaScript
 
 Demo page: https://ktock.github.io/llmlet-demo/
 
@@ -153,7 +155,7 @@ This project addresses this limitation by directly linking multiple browsers and
 
 ## Additional Resources
 
-- [`./examples/`](./examples): Examples (simple, functino calling, etc.)
+- [`./examples/`](./examples): Examples of function calling, etc.
 
 ## Similar projects
 

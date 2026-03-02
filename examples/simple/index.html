@@ -115,7 +115,7 @@
               const params = new URLSearchParams(window.location.search);
               if (params.get('noserver') != 'true') {
                   curServer = startServer(peer, await import('./llmlet-mod.js'), {
-                      output: (l) => printText(systemOutput, (new Date()).toLocaleString(undefined, {timeZoneName: 'short'}) + ' [server] ' + l),
+                      log: (l) => printText(systemOutput, (new Date()).toLocaleString(undefined, {timeZoneName: 'short'}) + ' [server] ' + l + '\n'),
                       getTargetNodes: getTargetNodes,
                   });
               }
@@ -130,7 +130,7 @@
   var runningClient = null;
   var clientOptions = {
       output: (l) => printText(output, l),
-      outputErr: (l) => printText(systemOutput, (new Date()).toLocaleString(undefined, {timeZoneName: 'short'}) + ' [client] ' + l),
+      log: (l) => printText(systemOutput, (new Date()).toLocaleString(undefined, {timeZoneName: 'short'}) + ' [client] ' + l + '\n'),
       getTargetNodes: getTargetNodes,
       getModelURL: () => document.getElementById('url-input').value,
       getModelFile: () => targetModelFile,

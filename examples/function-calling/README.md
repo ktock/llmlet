@@ -39,9 +39,10 @@ An example function is defined as the following, [in a similar schema as used by
 
 ```
 var display_tool = {
-    func: (arg) => {
+    func: (resCB, arg, opts) => {
+        opts.output("(display) Writing output\n");
         document.getElementById("display-from-model").innerHTML = arg.target_string;
-        return true;
+        resCB("true");
     },
     description: {
         type: "function",
@@ -64,5 +65,5 @@ var display_tool = {
 ```
 
 They are passed to the model via the system prompt as defined in the `createToolsSystemPrompt` function in [`./functions.js`](./functions.js).
-Each output from the model is hooked by `callTools` function and is checked if it describes a function calling.
+Each output from the model is hooked by `callTools` and is checked if it describes a function calling.
 If so, the corresponding function is invoked.
