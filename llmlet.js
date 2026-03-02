@@ -626,7 +626,7 @@ async function digestStr(str) {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function runClient(peer, module, Module, options) {
+async function runClient(module, Module, options) {
     const chunkcache = await chunkCache();
     Module.ChunkCache = chunkcache;
 
@@ -658,7 +658,7 @@ async function runClient(peer, module, Module, options) {
         if (response.status != 206) {
             console.error('server does not support range request. Trying full load');
             forceFullLoad = true;
-            options.output('HTTP Range Request is not supported by the server. Trying to fully load the model.\n');
+            console.warn('HTTP Range Request is not supported by the server. Trying to fully load the model.\n');
             if (!(await fetchModel(filenameHash, modelURL, chunkcache))) {
                 options.onExit(new Error("failed to load model"));
                 return;
@@ -687,12 +687,15 @@ async function runClient(peer, module, Module, options) {
         return;
     }
 
-    for (const i in options.args) {
-        Module['arguments'].push(options.args[i]);
+    if (options.args != null) {
+        Module['arguments'].unshift(...options.args);
     }
     
     try {
         await module.default(Module);
+        Module['TTY'].default_tty_ops.put_char = (tty, val) => {
+            options.output(String.fromCodePoint(val));
+        }
     } catch (e) {
         console.log("failed to run client" + e);
         options.onExit(e);
@@ -718,8 +721,8 @@ var frequentServerCount = 0;
 var frequentServerCountLim = 5;
 function startServer(peer, module, options) {
     var Module = {};
-    Module['print'] = (l) => options.output(l + '\n');
-    Module['printErr'] = (l) => options.output(l + '\n');
+    Module['print'] = (l) => options.log(l);
+    Module['printErr'] = (l) => options.log(l);
     Module['stdin'] = () => null;
 
     Module.PeerManager = newPeerManager(Module, peer, {
@@ -730,7 +733,7 @@ function startServer(peer, module, options) {
     var abortCalled = false;
     var serverRestarted = false;
     var exitHandler = (e) => {
-        options.output('exited: ' + e + '\n');
+        options.log('exited: ' + e);
         Module.PeerManager.close();
         if (!serverRestarted) {
             startServer(peer, module, options);
@@ -766,6 +769,11 @@ function startServer(peer, module, options) {
         '-rpcbackend',
     ];
 
+    if (options.disableWebGPU) {
+        Module['arguments'].push('-device');
+        Module['arguments'].push('cpu');
+    }
+
     if (lastServerStart != null) {
         if (Date.now() - lastServerStart < 1000) {
             frequentServerCount++;
@@ -774,10 +782,14 @@ function startServer(peer, module, options) {
         }
     }
     if (frequentServerCount >= frequentServerCountLim) {
-        options.output('Restarting too frequently (' + frequentServerCount + 'times). Stopped server.\n');
+        options.log('Restarting too frequently (' + frequentServerCount + 'times). Stopped server.\n');
         return;
     }
     lastServerStart = Date.now();
+
+    if (options.locateFile != null) Module['locateFile'] = options.locateFile;
+    if (options.mainScriptUrlOrBlob != "") Module['mainScriptUrlOrBlob'] = options.mainScriptUrlOrBlob;
+
     runServer(
         peer,
         module,
@@ -800,23 +812,22 @@ function startServer(peer, module, options) {
 function startClient(peer, module, options) {
     var Module = {};
 
-    var outputBuf = "";
-    
     Module['print'] = (l) => {
-        outputBuf += l;
         options.output(l + '\n');
     }
-    Module['printErr'] = (l) => options.outputErr(l + '\n');
+    Module['printErr'] = (l) => options.log(l);
 
-    Module.PeerManager = newPeerManager(Module, peer);
+    if (peer != null) Module.PeerManager = newPeerManager(Module, peer);
+
+    Module.isDecodingCancel = options.isDecodingCancel ? options.isDecodingCancel : () => 0;
 
     var running = true;
     
     var abortCalled = false;
     var exitHandler = (e) => {
-        options.outputErr('exited: ' + e + '\n');
+        options.log('exited: ' + e);
         running = false;
-        Module.PeerManager.close();
+        if (Module.PeerManager != null) Module.PeerManager.close();
     }
     Module['onExit'] = exitHandler;
     Module['onAbort'] = () => {
@@ -827,33 +838,50 @@ function startClient(peer, module, options) {
         abortCalled = true;
         try {
             Module.PThread.terminateAllThreads();
-            Module.PeerManager.close();
+            if (Module.PeerManager != null) Module.PeerManager.close();
         } catch(e) {
             console.log(e);
         }
     }
 
     Module['arguments'] = ['-d'];
-    var peersList = options.getTargetNodes();
-    for (const i in peersList) {
-        if (peersList[i] == peer.peer.id) {
-            continue;
+    if (Module.PeerManager != null) {
+        var peersList = options.getTargetNodes();
+        for (const i in peersList) {
+            if (peersList[i] == peer.peer.id) {
+                continue;
+            }
+            Module['arguments'].push('-rpc');
+            Module['arguments'].push(peersList[i]);
+            console.log("Added node " + peersList[i]);
         }
-        Module['arguments'].push('-rpc');
-        Module['arguments'].push(peersList[i]);
-        console.log("Added node " + peersList[i]);
     }
 
+    if (options.disableWebGPU) {
+        Module['arguments'].push('-device');
+        Module['arguments'].push('cpu');
+    }
+  
     var inputBuf = "";
+    var outputBuf = "";
     var pending_prompt_reader = [];
     Module.pending_prompt = (cb) => {
-        if (options.callTools != null) {
-            var callres = options.callTools(outputBuf);
+        if (options.outputHandler != null) {
+            var ok = options.outputHandler.handle(
+                outputBuf,
+                (res) => {
+                    if (typeof res === "string") {
+                        cb(res);
+                    } else {
+                        cb(JSON.stringify(res));
+                    }
+                },
+                {
+                    output: options.output,
+                },
+            );
             outputBuf = "";
-            if (callres != "") {
-                options.output("(function call result) " + callres + "\n");
-                cb(callres);
-                options.output("(output) ");
+            if (ok) {
                 return;
             }
         }
@@ -864,12 +892,10 @@ function startClient(peer, module, options) {
             inputBuf = "";
             options.output(res + '\n');
             cb(res);
-            options.output("(output) ");
         } else {
             pending_prompt_reader.push((res) => {
                 options.output(res + '\n');
                 cb(res);
-                options.output("(output) ");
             });
         }
     };
@@ -896,8 +922,10 @@ function startClient(peer, module, options) {
         Module['arguments'].push('-j', schemafile);
     }
 
+    Module['locateFile'] = options.locateFile;
+    Module['mainScriptUrlOrBlob'] = options.mainScriptUrlOrBlob;
+
     runClient(
-        peer,
         module,
         Module,
         {
@@ -905,6 +933,10 @@ function startClient(peer, module, options) {
             args: options.args,
             modelFile: options.getModelFile && options.getModelFile() || null,
             modelURL: options.getModelURL && options.getModelURL() || '',
+            output: (v) => {
+                outputBuf += v;
+                if (!options.quiet) options.output(v);
+            },
         },
     );
 
