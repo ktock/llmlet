@@ -23,6 +23,7 @@ using json = nlohmann::ordered_json;
 extern "C" {
   int get_next_prompt(char*, int);
   int get_system_prompt(char*, int);
+  int is_decoding_cancel();
 }
 
 #include <emscripten.h>
@@ -81,6 +82,7 @@ int main(int argc, char ** argv) {
     int ngl = -1;
     // context size
     int n_ctx = 4096;
+    int n_ubatch = 512;
 
     bool debug = false;
 
@@ -89,6 +91,8 @@ int main(int argc, char ** argv) {
     bool rpcbackend = false;
 
     std::string schemafile;
+
+    std::string device_name;
 
     // parse command line arguments
 
@@ -105,6 +109,16 @@ int main(int argc, char ** argv) {
                 if (i + 1 < argc) {
                     try {
                         n_ctx = std::stoi(argv[++i]);
+                    } catch (...) {
+                        return 1;
+                    }
+                } else {
+                    return 1;
+                }
+            } else if (strcmp(argv[i], "-u") == 0) {
+                if (i + 1 < argc) {
+                    try {
+                        n_ubatch = std::stoi(argv[++i]);
                     } catch (...) {
                         return 1;
                     }
@@ -131,6 +145,12 @@ int main(int argc, char ** argv) {
                 } else {
                     return 1;
                 }
+            } else if (strcmp(argv[i], "-device") == 0) {
+                if (i + 1 < argc) {
+                    device_name = argv[++i];
+                } else {
+                    return 1;
+                }
             } else if (strcmp(argv[i], "-j") == 0) {
                 if (i + 1 < argc) {
                     schemafile = argv[++i];
@@ -153,18 +173,17 @@ int main(int argc, char ** argv) {
 
     ggml_backend_load_all();
 
-    std::vector<ggml_backend_dev_t> devices;
-    // Try non-CPU devices first
-    if (webgpu_available()) {
+    if (rpcbackend) {
+      std::vector<ggml_backend_dev_t> devices;
+      // Try non-CPU devices first
+      if ((device_name != "cpu") && (webgpu_available())) {
         ggml_backend_dev_t dev = ggml_backend_dev_by_name(GGML_WEBGPU_NAME);
         if (dev) {
-            devices.push_back(dev);
+          devices.push_back(dev);
         }
-    } else {
+      } else {
         fprintf(stderr, "WebGPU is not available. Trying to fallback to CPU\n");
-    }
-
-    if (rpcbackend) {
+      }
       // If there are no accelerators, fallback to CPU device
       if (devices.empty()) {
         ggml_backend_dev_t dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
@@ -201,6 +220,7 @@ int main(int argc, char ** argv) {
             ggml_backend_register(reg);
         }
     }
+    std::vector<ggml_backend_dev_t> devices;
     for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
         ggml_backend_dev_t dev = ggml_backend_dev_get(i);
         ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(dev);
@@ -209,11 +229,19 @@ int main(int argc, char ** argv) {
         }
     }
 
-    // If there are no accelerators, fallback to CPU device
+    // If there are no device, fallback to a local device
     if (devices.empty()) {
-      ggml_backend_dev_t dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
-      if (dev) {
-        devices.push_back(dev);
+      if ((device_name != "cpu") && (webgpu_available())) {
+        ggml_backend_dev_t dev = ggml_backend_dev_by_name(GGML_WEBGPU_NAME);
+        if (dev) {
+          devices.push_back(dev);
+        }
+      } else {
+        fprintf(stderr, "WebGPU is not available. Trying to fallback to CPU\n");
+        ggml_backend_dev_t dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+        if (dev) {
+          devices.push_back(dev);
+        }
       }
     }
 
@@ -243,6 +271,10 @@ int main(int argc, char ** argv) {
 
     llama_context_params ctx_params = llama_context_default_params();
     ctx_params.n_ctx = n_ctx;
+    ctx_params.n_batch = n_ctx;
+    ctx_params.n_ubatch = n_ubatch;
+    ctx_params.n_threads = std::thread::hardware_concurrency() / 2;
+    ctx_params.n_threads_batch = std::thread::hardware_concurrency() / 2;
 
     llama_context * ctx = llama_init_from_model(model, ctx_params);
 
@@ -282,8 +314,7 @@ int main(int argc, char ** argv) {
             int n_ctx = llama_n_ctx(ctx);
             int n_ctx_used = llama_memory_seq_pos_max(llama_get_memory(ctx), 0) + 1;
             if (n_ctx_used + batch.n_tokens > n_ctx) {
-                fprintf(stderr, "context size exceeded\n");
-                exit(0);
+                GGML_ABORT("context size exceeded\n");
             }
 
             int ret = llama_decode(ctx, batch);
@@ -313,6 +344,10 @@ int main(int argc, char ** argv) {
             printf("%s", piece.c_str());
             fflush(stdout);
             response += piece;
+
+            if (is_decoding_cancel()) {
+                break;
+            }
 
             // prepare the next batch with the sampled token
             batch = llama_batch_get_one(&new_token_id, 1);

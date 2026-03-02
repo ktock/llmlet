@@ -2,6 +2,7 @@ mergeInto(LibraryManager.library, {
     send_peer__proxy: 'sync',
     send_peer__sig: 'iipi',
     send_peer: function(fd, ptr, len) {
+        if (Module.PeerManager == null) return -1;
         return Module.PeerManager.send(fd, HEAPU8.subarray(ptr, ptr + len));
     },
 
@@ -15,20 +16,25 @@ mergeInto(LibraryManager.library, {
         }
         var doneCB = (ok) => {
             if (ok) {
-                Atomics.store(HEAP32, waitPtr >> 2, curptr - ptr);
+                Atomics.store(HEAP32, waitPtr >>> 2, curptr - ptr);
             } else {
-                Atomics.store(HEAP32, waitPtr >> 2, -1);
+                Atomics.store(HEAP32, waitPtr >>> 2, -1);
             }
-            Atomics.notify(HEAP32, waitPtr >> 2);
+            Atomics.notify(HEAP32, waitPtr >>> 2);
             return true;
+        }
+        if (Module.PeerManager == null) {
+            doneCB(false);
+            return;
         }
         Module.PeerManager.recv(fd, len, writeCB, doneCB);
         return;
     },
 
     $register_buf__proxy: 'sync',
-    $register_buf__sig: 'ip',
+    $register_buf__sig: 'vip',
     $register_buf: function(fd, ptr) {
+        if (Module.PeerManager == null) return;
         Module.PeerManager.register_buf(fd, ptr);
     },
 
@@ -68,10 +74,10 @@ mergeInto(LibraryManager.library, {
             targetPtr = Module._connbuf[fd].buf;
             targetLen = RECV_BUF_SIZE;
         }
-        Atomics.store(HEAP32, waitPtr >> 2, -2);
+        Atomics.store(HEAP32, waitPtr >>> 2, -2);
         recv_peer_inner(fd, targetPtr, targetLen, waitPtr);
-        Atomics.wait(HEAP32, waitPtr >> 2, -2);
-        var reslen = Atomics.load(HEAP32, waitPtr >> 2);
+        Atomics.wait(HEAP32, waitPtr >>> 2, -2);
+        var reslen = Atomics.load(HEAP32, waitPtr >>> 2);
         _free(waitPtr);
 
         if (isBufferTarget && (reslen > 0)) {
@@ -90,10 +96,14 @@ mergeInto(LibraryManager.library, {
     $connect_peer_inner__sig: 'vpip',
     $connect_peer_inner: function(ptr, len, waitPtr) {
         var done = (res) => {
-            Atomics.store(HEAP32, waitPtr >> 2, res);
-            Atomics.notify(HEAP32, waitPtr >> 2);
+            Atomics.store(HEAP32, waitPtr >>> 2, res);
+            Atomics.notify(HEAP32, waitPtr >>> 2);
         }
         var nodeid = new Uint8Array(HEAPU8.subarray(ptr, ptr + len));
+        if (Module.PeerManager == null) {
+            done(-1);
+            return;
+        }
         Module.PeerManager.connect((new TextDecoder('utf-8')).decode(nodeid), done);
         return;
     },
@@ -103,10 +113,10 @@ mergeInto(LibraryManager.library, {
     connect_peer__sig: 'ipi',
     connect_peer: function(ptr, len) {
         var waitPtr = _malloc(8);
-        Atomics.store(HEAP32, waitPtr >> 2, -2);
+        Atomics.store(HEAP32, waitPtr >>> 2, -2);
         connect_peer_inner(ptr, len, waitPtr);
-        Atomics.wait(HEAP32, waitPtr >> 2, -2);
-        var res = Atomics.load(HEAP32, waitPtr >> 2);
+        Atomics.wait(HEAP32, waitPtr >>> 2, -2);
+        var res = Atomics.load(HEAP32, waitPtr >>> 2);
         _free(waitPtr);
         return res;
     },
@@ -114,11 +124,15 @@ mergeInto(LibraryManager.library, {
     $accept_peer_inner__proxy: 'sync',
     $accept_peer_inner__sig: 'vp',
     $accept_peer_inner: function(ptr) {
-        Atomics.store(HEAP32, ptr >> 2, -1);
-        Module.PeerManager.accept((fd) => {
-            Atomics.store(HEAP32, ptr >> 2, fd);
-            Atomics.notify(HEAP32, ptr >> 2);
-        });
+        const done = (fd) => {
+            Atomics.store(HEAP32, ptr >>> 2, fd);
+            Atomics.notify(HEAP32, ptr >>> 2);
+        }
+        if (Module.PeerManager == null) {
+            done(-1);
+            return;
+        }
+        Module.PeerManager.accept(done);
         return;
     },
 
@@ -127,9 +141,10 @@ mergeInto(LibraryManager.library, {
     accept_peer__sig: 'i',
     accept_peer: function() {
         var waitPtr = _malloc(8);
+        Atomics.store(HEAP32, waitPtr >>> 2, -1);
         accept_peer_inner(waitPtr);
-        Atomics.wait(HEAP32, waitPtr >> 2, -1);
-        var fd = Atomics.load(HEAP32, waitPtr >> 2);
+        Atomics.wait(HEAP32, waitPtr >>> 2, -1);
+        var fd = Atomics.load(HEAP32, waitPtr >>> 2);
         _free(waitPtr);
         return fd;
     },
@@ -142,6 +157,7 @@ mergeInto(LibraryManager.library, {
     $close_peer_inner__proxy: 'sync',
     $close_peer_inner__sig: 'i',
     $close_peer_inner: function(fd) {
+        if (Module.PeerManager == null) return -1;
         return Module.PeerManager.close_connection(fd);
     },
 
@@ -155,7 +171,6 @@ mergeInto(LibraryManager.library, {
     $get_next_prompt_inner__proxy: 'sync',
     $get_next_prompt_inner__sig: 'vpip',
     $get_next_prompt_inner: function(ptr, len, waitPtr) {
-        Atomics.store(HEAP32, waitPtr >> 2, -1);
         Module.pending_prompt((p) => {
             var res = 0;
             if ((p != null) && (p.length != 0)) {
@@ -163,8 +178,8 @@ mergeInto(LibraryManager.library, {
                 HEAPU8.set(p.slice(0, res).split('').map(c => c.charCodeAt(0)), ptr);
             }
             HEAPU8.set([0], ptr + res);
-            Atomics.store(HEAP32, waitPtr >> 2, res);
-            Atomics.notify(HEAP32, waitPtr >> 2);
+            Atomics.store(HEAP32, waitPtr >>> 2, res);
+            Atomics.notify(HEAP32, waitPtr >>> 2);
         });
         return;
     },
@@ -174,9 +189,10 @@ mergeInto(LibraryManager.library, {
     get_next_prompt__sig: 'ipi',
     get_next_prompt: function(ptr, len) {
         var waitPtr = _malloc(8);
+        Atomics.store(HEAP32, waitPtr >>> 2, -1);
         get_next_prompt_inner(ptr, len, waitPtr);
-        Atomics.wait(HEAP32, waitPtr >> 2, -1);
-        var res = Atomics.load(HEAP32, waitPtr >> 2);
+        Atomics.wait(HEAP32, waitPtr >>> 2, -1);
+        var res = Atomics.load(HEAP32, waitPtr >>> 2);
         _free(waitPtr);
         return res;
     },
@@ -184,7 +200,6 @@ mergeInto(LibraryManager.library, {
     $get_system_prompt_inner__proxy: 'sync',
     $get_system_prompt_inner__sig: 'vpip',
     $get_system_prompt_inner: function(ptr, len, waitPtr) {
-        Atomics.store(HEAP32, waitPtr >> 2, -1);
         Module.pending_system_prompt((p) => {
             var res = 0;
             if ((p != null) && (p.length != 0)) {
@@ -192,8 +207,8 @@ mergeInto(LibraryManager.library, {
                 HEAPU8.set(p.slice(0, res).split('').map(c => c.charCodeAt(0)), ptr);
             }
             HEAPU8.set([0], ptr + res);
-            Atomics.store(HEAP32, waitPtr >> 2, res);
-            Atomics.notify(HEAP32, waitPtr >> 2);
+            Atomics.store(HEAP32, waitPtr >>> 2, res);
+            Atomics.notify(HEAP32, waitPtr >>> 2);
         });
         return;
     },
@@ -203,9 +218,10 @@ mergeInto(LibraryManager.library, {
     get_system_prompt__sig: 'ipi',
     get_system_prompt: function(ptr, len) {
         var waitPtr = _malloc(8);
+        Atomics.store(HEAP32, waitPtr >>> 2, -1);
         get_system_prompt_inner(ptr, len, waitPtr);
-        Atomics.wait(HEAP32, waitPtr >> 2, -1);
-        var res = Atomics.load(HEAP32, waitPtr >> 2);
+        Atomics.wait(HEAP32, waitPtr >>> 2, -1);
+        var res = Atomics.load(HEAP32, waitPtr >>> 2);
         _free(waitPtr);
         return res;
     },
@@ -214,17 +230,15 @@ mergeInto(LibraryManager.library, {
     $cache_get_inner__sig: 'vpipiip',
     $cache_get_inner: function(keyptr, keylen, ptr, ofs, len, waitPtr) {
         var rawkey = (new TextDecoder('utf-8')).decode(new Uint8Array(HEAPU8.subarray(keyptr, keyptr + keylen)));
-        Atomics.store(HEAP32, waitPtr >> 2, -1);
-
         const done = (res) => {
             if ((res != null) && (ofs < res.byteLength)) {
                 var reslen = Math.min(len, res.byteLength - ofs);
                 HEAPU8.set(res.subarray(ofs, ofs + reslen), ptr);
-                Atomics.store(HEAP32, waitPtr >> 2, reslen);
-                Atomics.notify(HEAP32, waitPtr >> 2);
+                Atomics.store(HEAP32, waitPtr >>> 2, reslen);
+                Atomics.notify(HEAP32, waitPtr >>> 2);
             } else {
-                Atomics.store(HEAP32, waitPtr >> 2, 0);
-                Atomics.notify(HEAP32, waitPtr >> 2);
+                Atomics.store(HEAP32, waitPtr >>> 2, 0);
+                Atomics.notify(HEAP32, waitPtr >>> 2);
             }
         }
         const key = "rpcchunk:" + rawkey;
@@ -245,9 +259,10 @@ mergeInto(LibraryManager.library, {
     cache_get__sig: 'ipipii',
     cache_get: function(keyptr, keylen, resptr, resofs, reslen) {
         var waitPtr = _malloc(8);
+        Atomics.store(HEAP32, waitPtr >>> 2, -1);
         cache_get_inner(keyptr, keylen, resptr, resofs, reslen, waitPtr);
-        Atomics.wait(HEAP32, waitPtr >> 2, -1);
-        var reslen = Atomics.load(HEAP32, waitPtr >> 2);
+        Atomics.wait(HEAP32, waitPtr >>> 2, -1);
+        var reslen = Atomics.load(HEAP32, waitPtr >>> 2);
         _free(waitPtr);
         return reslen;
     },
@@ -256,11 +271,9 @@ mergeInto(LibraryManager.library, {
     $cache_put_inner__sig: 'vpipip',
     $cache_put_inner: function(keyptr, keylen, ptr, len, waitPtr) {
         var rawkey = (new TextDecoder('utf-8')).decode(new Uint8Array(HEAPU8.subarray(keyptr, keyptr + keylen)));
-        Atomics.store(HEAP32, waitPtr >> 2, -1);
-
         const done = (res) => {
-            Atomics.store(HEAP32, waitPtr >> 2, res ? 1 : 0);
-            Atomics.notify(HEAP32, waitPtr >> 2);
+            Atomics.store(HEAP32, waitPtr >>> 2, res ? 1 : 0);
+            Atomics.notify(HEAP32, waitPtr >>> 2);
         }
         const key = "rpcchunk:" + rawkey;
         Module.ChunkCache.put(key, HEAPU8.slice(ptr, ptr + len)).then(() => {
@@ -278,11 +291,17 @@ mergeInto(LibraryManager.library, {
     cache_put__sig: 'vpipi',
     cache_put: function(keyptr, keylen, resptr, reslen) {
         var waitPtr = _malloc(8);
+        Atomics.store(HEAP32, waitPtr >>> 2, -1);
         cache_put_inner(keyptr, keylen, resptr, reslen, waitPtr);
-        Atomics.wait(HEAP32, waitPtr >> 2, -1);
-        Atomics.load(HEAP32, waitPtr >> 2);
+        Atomics.wait(HEAP32, waitPtr >>> 2, -1);
+        Atomics.load(HEAP32, waitPtr >>> 2);
         _free(waitPtr);
         return;
     },
 
+    is_decoding_cancel__proxy: 'sync',
+    is_decoding_cancel__sig: 'i',
+    is_decoding_cancel: function() {
+        return Module.isDecodingCancel();
+    },
 });
