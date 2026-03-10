@@ -3,12 +3,12 @@ EMDAWNWEBGPU_DIR ?= $(CURDIR)/build/emdawnwebgpu_pkg
 
 LLAMA_CPP_LIBS=$(BUILD_DIR)/src/libllama.a $(BUILD_DIR)/common/libcommon.a $(BUILD_DIR)/ggml/src/libggml.a $(BUILD_DIR)/ggml/src/libggml-base.a $(BUILD_DIR)/ggml/src/libggml-cpu.a $(BUILD_DIR)/ggml/src/ggml-webgpu/libggml-webgpu.a $(BUILD_DIR)/ggml/src/ggml-rpc/libggml-rpc.a
 
-EMCC_COMMON_CFLAGS=-g -O3 -pthread -sMEMORY64=2 -mno-simd128
+EMCC_COMMON_CFLAGS=-g -O3 -pthread -sMEMORY64=2 -msimd128 -sASSERTIONS=1
 
 llmlet-mod.js: $(LLAMA_CPP_LIBS)
-	em++ $(EMCC_COMMON_CFLAGS) -sPROXY_TO_PTHREAD -sASYNCIFY=1 -sFORCE_FILESYSTEM=1 -sEXPORT_ES6=1 -sEXPORTED_FUNCTIONS=_main,_emscripten_force_exit -sEXIT_RUNTIME=1 -sEXPORTED_RUNTIME_METHODS=FS,PThread,ENV,release_conn -sNO_DISABLE_EXCEPTION_CATCHING -sABORTING_MALLOC=0 -sALLOW_MEMORY_GROWTH=1 \
+	em++ $(EMCC_COMMON_CFLAGS) -sPROXY_TO_PTHREAD -sASYNCIFY=1 -sFORCE_FILESYSTEM=1 -sEXPORT_ES6=1 -sEXPORTED_FUNCTIONS=_main,_emscripten_force_exit -sEXIT_RUNTIME=1 -sEXPORTED_RUNTIME_METHODS=FS,PThread,ENV,release_conn,TTY  -fwasm-exceptions -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=4GB -sMALLOC=mimalloc \
 	-o $(BUILD_DIR)/llmlet-mod.js \
-	-I ./llama.cpp/ggml/include/ -I./llama.cpp/include/ -I./llama.cpp/common/ \
+	-I ./llama.cpp/ggml/include/ -I./llama.cpp/include/ -I./llama.cpp/common/ -I./llama.cpp/vendor/ \
 	-L$(BUILD_DIR)/src/ -lllama \
 	-L$(BUILD_DIR)/common/ -lcommon \
 	-L$(BUILD_DIR)/ggml/src/ -lggml -lggml-base -lggml-cpu \
@@ -29,6 +29,7 @@ llama.cpp/build:
                                       -DLLAMA_BUILD_TOOLS=OFF \
                                       -DLLAMA_BUILD_EXAMPLES=OFF \
                                       -DLLAMA_BUILD_SERVER=OFF \
+                                      -DGGML_WEBGPU_JSPI=ON \
                                       -DGGML_RPC=ON && \
         cmake --build $(BUILD_DIR) --config Release -j$(nproc)
 

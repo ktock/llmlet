@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>LLMlet demo</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-rbsA2VBKQhggwzxH7pPCaAqO46MgnOM80zW1RWuH61DGLwZJEdK2Kadq2F9CUG65" crossorigin="anonymous">
+</head>
+<body>
+<main class="container">
+
+<h1>LLMlet demo</h1>
+
+<section class="mb-5">
+
+<div class="form-group">
+<button id="pingButton" class="btn btn-primary">ping(debug)</button>
+</div>
+
+<p class="h6 small">Peer ID</p>
+<p id="peerid">Peer ID not assigned</p>
+
+<div class="form-group pb-1">
+<label for="otherpeers" class="form-label">
+<span class="h6 small">Peers to connect to / accept (comma or newline separated)</span>
+</label>
+<textarea id="otherpeers" rows="1" class="form-control" style="overflow: hidden; resize: none;"></textarea>
+</div>
+
+<div class="row pb-2">
+
+<div class="form-group col-sm-6">
+<label for="url-input" class="form-label">
+<span class="h6 small">GGUF Model URL:</span>
+</label>
+<input type="text" id="url-input" class="form-control" />
+</div>
+
+<div class="form-group col-sm-6">
+<label for="file-input" class="form-label">
+<span class="h6 small">Or, specify a local GGUF model file:</span>
+</label>
+<input type="file" id="file-input" class="form-control" />
+
+</div>
+
+</div>
+
+<p><span class="h6 small">Model chat session</span></p>
+<div id="output" class="p-3 bg-dark text-white text-break overflow-y-auto font-monospace" style="height: 400px; white-space: pre-wrap; overflow-x: hidden; font-size: 0.9rem; resize: vertical;"></div>
+<div class="input-group pb-1 pt-1">
+<textarea id="promptMessage" class="form-control" style="overflow: hidden; resize: none;" placeholder="Ask something, or type /help for usage" rows="1"></textarea>
+<div class="input-group-append">
+<button id="doPromptButton" class="btn btn-outline-secondary">Enter</button>
+</div>
+</div>
+
+<p><span class="h6 small">system log</span></p>
+<div id="system-output" class="pt-2 p-3 bg-dark text-white text-break overflow-y-auto font-monospace" style="height: 100px; white-space: pre-wrap; overflow-x: hidden; font-size: 0.9rem; resize: vertical;"></div>
+
+</section>
+
+</main>
+<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+<script src="./llmlet.js"></script>
+
+<script type="module">
+
+  var node;
+
+  var targetModelFile;
+  const fileInput = document.getElementById("file-input");
+  fileInput.addEventListener("change", (event) => {
+      const file = event.target.files[0];
+      if (!file) {
+          console.error("specify file");
+          return;
+      }
+      targetModelFile = file;
+  });
+
+  const output = document.getElementById('output');
+  const systemOutput = document.getElementById('system-output');
+  function printText(target, txt) {
+      target.textContent += txt;
+      if (target.scrollHeight - target.clientHeight <= target.scrollTop + 70) {
+          target.scrollTop = target.scrollHeight - target.clientHeight;
+      }
+  }
+
+  var peer;
+
+  var curServer;
+  
+  setTimeout(() => {
+      const peerserverAddress = "127.0.0.1:9000";
+      var peerOptions = {
+          debug: 2,
+      };
+      if (peerserverAddress != '') {
+          const parts = peerserverAddress.split(":");
+          peerOptions.host = parts[0];
+          peerOptions.port = parts[1] || "";
+      }
+      peer = newPeer({
+          peerOptions: peerOptions,
+          printLog: (l) => printText(systemOutput, (new Date()).toLocaleString(undefined, {timeZoneName: 'short'}) + ' [peer] ' + l + '\n'),
+          onOpen: async (id) => {
+              if (curServer != null) {
+                  curServer.exit();
+              }
+              console.log('My peer ID is: ' + id);
+              node = id;
+              document.getElementById('peerid').textContent = id;
+              const params = new URLSearchParams(window.location.search);
+              if (params.get('noserver') != 'true') {
+                  curServer = startServer(peer, await import('./llmlet-mod.js'), {
+                      log: (l) => printText(systemOutput, (new Date()).toLocaleString(undefined, {timeZoneName: 'short'}) + ' [server] ' + l + '\n'),
+                      getTargetNodes: getTargetNodes,
+                  });
+              }
+          }
+      });
+  }, 500);
+
+  function getTargetNodes() {
+      return document.getElementById('otherpeers').value.split(/[\s,]+/).filter((w) => w != "");
+  }
+
+  var runningClient = null;
+  var clientOptions = {
+      output: (l) => printText(output, l),
+      log: (l) => printText(systemOutput, (new Date()).toLocaleString(undefined, {timeZoneName: 'short'}) + ' [client] ' + l + '\n'),
+      getTargetNodes: getTargetNodes,
+      getModelURL: () => document.getElementById('url-input').value,
+      getModelFile: () => targetModelFile,
+  };
+
+  function formatArray(arr) {
+      var res = "";
+      for (const k in arr) {
+          res += arr[k] + " ";
+      }
+      return res
+  }
+  
+  function handleSystemCommand(msg, module, clientOptions) {
+      var cmds = msg.split(/[\s]+/).filter((w) => w != "");
+      if (cmds.length == 0) {
+          return false;
+      }
+      console.log("checking " + cmds[0]);
+      switch (cmds[0]) {
+       case "/help":
+          printText(output, "(command) " + msg + "\n");
+          let helpText = `
+/-prefixed string is interpreted as a command and other strings are passed to the model.
+Available commands are the following:
+
+  /help          : Show this help message
+  /restart       : Restart the chat session with the latest peer list
+  /exit          : Exit the current chat session
+  /args          : Set additional client arguments (current: ${formatArray(clientOptions.args)}) (space separated)
+`
+          printText(output, helpText);
+          return true;
+      case "/restart":
+          printText(output, "(command) " + msg + "\n");
+          if (runningClient && runningClient.isRunning()) {
+              runningClient.exit();
+          }
+          runningClient = startClient(peer, module, clientOptions);
+          return true;
+      case "/exit":
+          printText(output, "(command) " + msg + "\n");
+          if (runningClient && runningClient.isRunning()) {
+              runningClient.exit();
+          }
+          runningClient = null;
+          return true;
+      case "/args":
+          printText(output, "(command) " + msg + "\n");
+          clientOptions.args = cmds.slice(1);
+          return true;
+      default:
+          console.log("unknown cmd:" + cmds);
+          return false;
+      }
+  }
+
+  const doPromptButton = document.getElementById('doPromptButton');
+  const promptMessage = document.getElementById('promptMessage');
+  async function enterPrompt() {
+      if (peer.peer.id == undefined) {
+          printText(systemOutput, '[index] Peer ID is not assigned or peer server disconnected\n');
+          return;
+      }
+      var msg = promptMessage.value;
+      promptMessage.value = "";
+
+      if (msg == "") {
+          return;
+      }
+
+      const module = await import('./llmlet-mod.js');
+
+      if (handleSystemCommand(msg, module, clientOptions)) {
+          return;
+      }
+
+      if (!runningClient || !runningClient.isRunning()) {
+          runningClient = startClient(peer, module, clientOptions);
+      }
+
+      runningClient.input(msg);
+
+  }
+
+  promptMessage.addEventListener("keypress", function(event) {
+      if ((event.key === "Enter") && !event.shiftKey) {
+          event.preventDefault();
+          enterPrompt();
+          promptMessage.style.height = 'auto';
+      }
+  });
+  doPromptButton.onclick = enterPrompt;
+
+  function growableTextBox(box) {
+      box.addEventListener("input", function(event) {
+          box.style.height = 'auto';
+          box.style.height = box.scrollHeight + 'px';
+      });
+  }
+
+  growableTextBox(promptMessage);
+  growableTextBox(document.getElementById('otherpeers'));
+
+  const pingButton = document.getElementById('pingButton');
+  const signaling = new BroadcastChannel('webrtc');
+  signaling.onmessage = e => {
+      switch (e.data.type) {
+      case 'ping':
+          signaling.postMessage({type: 'info', src: node, dst: e.data.src});
+          break;
+      case 'info':
+          if (e.data.dst == node) {
+              document.getElementById('otherpeers').value += e.data.src + ',';
+          }
+          break;
+      default:
+          console.log('unknown data', e);
+          break;
+      }
+  }
+  pingButton.onclick = async () => {
+      pingButton.disabled = true;
+      signaling.postMessage({type: 'ping', src: node});
+  }
+</script>
+
+</body>
+</html>

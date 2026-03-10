@@ -1,7 +1,9 @@
 # LLMlet: P2P distributed LLM inference on browsers
 
-LLMlet enables distributed LLM inference on browsers using [Wasm-compiled llama.cpp](https://github.com/ggml-org/llama.cpp/blob/10e9780154365b191fb43ca4830659ef12def80f/docs/build.md#webgpu-in-progress) connected via WebRTC using [PeerJS](https://peerjs.com/).
-It allows models that can't fit in a single browser tab to be split and executed across multiple browsers.
+LLMlet is an on-browser LLM runner based on [Wasm-compiled llama.cpp](https://github.com/ggml-org/llama.cpp/blob/10e9780154365b191fb43ca4830659ef12def80f/docs/build.md#webgpu-in-progress).
+
+- Distributed LLM inference among browsers connected via WebRTC using [PeerJS](https://peerjs.com/).
+- Calling functions written in JavaScript
 
 Demo page: https://ktock.github.io/llmlet-demo/
 
@@ -84,13 +86,13 @@ Store the assets compiled in the previous steps to `/tmp/test/htdocs/`.
 Then copy the following files from this repo to the same document root.
 
 - `llmlet.js`: A JS file to configure and start a peer in the browser.
-- `example/`: Contains an example index.html file for local testing.
+- `examples/simple/`: Contains an example index.html file for local testing.
 
 ```
-cp llmlet.js example/* /tmp/test/htdocs/
+cp llmlet.js examples/simple/* /tmp/test/htdocs/
 ```
 
-`example/index.html` is intended for local testing and requires a localhost PeerJS signaling server.
+`examples/simple/index.html` is intended for local testing and requires a localhost PeerJS signaling server.
 
 ```
 docker run --rm -d --name peerjs -p 127.0.0.1:9000:9000 peerjs/peerjs-server
@@ -150,6 +152,10 @@ This project addresses this limitation by directly linking multiple browsers and
   -  If it is a temporary connection failure, you can restart inference using `/restart` command on the client peer. If it fails frequently, connecting to peers from a different network (e.g. different WiFi network) might improve the connection.
 - **LLM prints corrupted string**
     - Try reloading and restarting the page. Stale data might be cached in the IndexedDB named `ChunkCache` so remove them ([a guide to delete IndexedDB data on chrome](https://developer.chrome.com/docs/devtools/storage/indexeddb?hl=en#deletedatabase)).
+
+## Additional Resources
+
+- [`./examples/`](./examples): Examples of function calling, etc.
 
 ## Similar projects
 
