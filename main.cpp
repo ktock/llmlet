@@ -201,6 +201,7 @@ int main(int argc, char ** argv) {
     }
 
     if (model_path.empty()) {
+        fprintf(stderr, "model path is not specified\n");
         return 1;
     }
 
@@ -258,6 +259,8 @@ int main(int argc, char ** argv) {
     devices.push_back(nullptr);
     model_params.devices = devices.data();
 
+    fprintf(stderr, "loading the model\n");
+
     llama_model * model = llama_model_load_from_file(model_path.c_str(), model_params);
 
     if (model == NULL) {
@@ -275,6 +278,7 @@ int main(int argc, char ** argv) {
     ctx_params.n_ubatch = n_ubatch;
     ctx_params.n_threads = std::thread::hardware_concurrency() / 2;
     ctx_params.n_threads_batch = std::thread::hardware_concurrency() / 2;
+    ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
 
     llama_context * ctx = llama_init_from_model(model, ctx_params);
 
@@ -287,9 +291,11 @@ int main(int argc, char ** argv) {
     const bool enable_schema = !schemafile.empty();
     if (enable_schema) {
       std::ifstream sf(schemafile);
-      smpl_params.grammar = json_schema_to_grammar(json::parse(sf));
-      fprintf(stderr, "%s\n", smpl_params.grammar.c_str());
+      smpl_params.grammar = {COMMON_GRAMMAR_TYPE_OUTPUT_FORMAT, json_schema_to_grammar(json::parse(sf))};
+      fprintf(stderr, "%s\n", common_grammar_value(smpl_params.grammar).c_str());
     }
+
+    bool session_started = false;
 
     // helper function to evaluate a prompt and generate a response
     auto generate = [&](const std::string & prompt) {
@@ -343,6 +349,10 @@ int main(int argc, char ** argv) {
             std::string piece(buf, n);
             printf("%s", piece.c_str());
             fflush(stdout);
+            if (!session_started) {
+                fprintf(stderr, "session started\n");
+                session_started = true;
+            }
             response += piece;
 
             if (is_decoding_cancel()) {
@@ -367,6 +377,8 @@ int main(int argc, char ** argv) {
       messages.push_back({"system", strdup(system)});
       fprintf(stderr, "%s\n", system);
     }
+
+    fprintf(stderr, "starting the session...\n");
     
     int prev_len = 0;
     char *user = (char *)malloc(n_ctx);
