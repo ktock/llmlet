@@ -287,8 +287,8 @@ int main(int argc, char ** argv) {
     const bool enable_schema = !schemafile.empty();
     if (enable_schema) {
       std::ifstream sf(schemafile);
-      smpl_params.grammar = json_schema_to_grammar(json::parse(sf));
-      fprintf(stderr, "%s\n", smpl_params.grammar.c_str());
+      smpl_params.grammar = {COMMON_GRAMMAR_TYPE_OUTPUT_FORMAT, json_schema_to_grammar(json::parse(sf))};
+      fprintf(stderr, "%s\n", common_grammar_value(smpl_params.grammar).c_str());
     }
 
     // helper function to evaluate a prompt and generate a response
