@@ -275,6 +275,7 @@ int main(int argc, char ** argv) {
     ctx_params.n_ubatch = n_ubatch;
     ctx_params.n_threads = std::thread::hardware_concurrency() / 2;
     ctx_params.n_threads_batch = std::thread::hardware_concurrency() / 2;
+    ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
 
     llama_context * ctx = llama_init_from_model(model, ctx_params);
 
